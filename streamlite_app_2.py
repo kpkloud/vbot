@@ -5,6 +5,7 @@ import subprocess
 import os
 import sqlite3
 from datetime import datetime
+from streamlit.components.v1 import html
 
 # Set API key from Streamlit secrets
 openai.api_key = st.secrets["OPENAI_API_KEY"]
@@ -120,6 +121,12 @@ if st.button("Generate Diagram"):
             """, unsafe_allow_html=True)
         else:
             st.info("Live preview only supported for Mermaid. Use download buttons for other formats.")
+
+        # Embed editable canvas (experimental for visual feedback)
+        st.subheader("🖼 Interactive Canvas (Experimental)")
+        html(f"""
+        <iframe src="https://embed.d2lang.com/" width="100%" height="400px" style="border:1px solid #ccc;"></iframe>
+        """, height=400)
 
         # Save diagram source
         saved_file = save_diagram(diagram_code, diagram_format)
