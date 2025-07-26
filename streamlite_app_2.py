@@ -3,6 +3,7 @@ import openai
 import tempfile
 import subprocess
 import os
+import sqlite3
 from datetime import datetime
 
 # Set API key from Streamlit secrets
@@ -11,6 +12,26 @@ openai.api_key = st.secrets["OPENAI_API_KEY"]
 # Page config
 st.set_page_config(page_title="Cloud Visio Generator", layout="wide")
 st.title("🧠 Prompt to Cloud Architecture Diagram")
+
+# Initialize SQLite DB for storing diagrams
+conn = sqlite3.connect("diagrams.db", check_same_thread=False)
+cursor = conn.cursor()
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS diagrams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    timestamp TEXT,
+    format TEXT,
+    prompt TEXT,
+    code TEXT
+)
+""")
+conn.commit()
+
+# User login
+username = st.text_input("Enter your username to begin:")
+if not username:
+    st.stop()
 
 # User input prompt
 prompt = st.text_area("Describe your cloud architecture (e.g., Azure AKS + Load Balancer):", height=150)
@@ -65,6 +86,19 @@ def export_to_png(file_path, format):
         st.error(f"Export failed: {e}")
         return None
 
+# Function to export to VSDX using draw.io CLI
+def export_to_visio(file_path):
+    vsdx_path = file_path.replace(file_path.split(".")[-1], "vsdx")
+    try:
+        subprocess.run([
+            "npx", "@hediet/diagram-cli", "render", file_path,
+            "--output", vsdx_path
+        ], check=True)
+        return vsdx_path if os.path.exists(vsdx_path) else None
+    except Exception as e:
+        st.error(f"VSDX export failed: {e}")
+        return None
+
 # Generate diagram on button click
 if st.button("Generate Diagram"):
     if not prompt:
@@ -97,3 +131,26 @@ if st.button("Generate Diagram"):
             if png_file:
                 with open(png_file, "rb") as f:
                     st.download_button("Download PNG Diagram", f, file_name=png_file, mime="image/png")
+
+        # Export Visio (VSDX) via draw.io CLI
+        vsdx_file = export_to_visio(saved_file)
+        if vsdx_file:
+            with open(vsdx_file, "rb") as f:
+                st.download_button("Download Visio (.vsdx) File", f, file_name=vsdx_file, mime="application/vnd.visio")
+
+        # Save to database
+        cursor.execute("""
+            INSERT INTO diagrams (username, timestamp, format, prompt, code)
+            VALUES (?, ?, ?, ?, ?)
+        """, (username, datetime.now().isoformat(), diagram_format, prompt, diagram_code))
+        conn.commit()
+
+# Diagram Gallery
+st.subheader("📁 Your Saved Diagrams")
+cursor.execute("SELECT timestamp, format, prompt, code FROM diagrams WHERE username = ? ORDER BY id DESC", (username,))
+diagrams = cursor.fetchall()
+
+for t, f, p, c in diagrams:
+    with st.expander(f"{t} - {f}"):
+        st.markdown(f"**Prompt:** {p}")
+        st.code(c, language="mermaid" if f == "Mermaid" else "text")
